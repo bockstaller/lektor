@@ -1,0 +1,51 @@
+name: Tests master
+
+on:
+  push
+  # This avoids having duplicate builds for a pull request
+
+jobs:
+  ############################################################################
+  # Python tests
+  ############################################################################
+  python-tests:
+    env:
+      LEKTOR_SILENT: true
+    name: ${{ matrix.os }} py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["windows-latest"]
+    steps:
+      - name: Install winget
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/microsoft/winget-cli/releases/latest/download/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle" -OutFile "C:\WinGet.msixbundle"
+          Import-Module Appx -usewindowspowershell
+          Add-AppxPackage "C:\WinGet.msixbundle"
+
+      - name: Install python via store
+        run: |
+          winget install --silent "Python 3.10" --accept-package-agreements --accept-source-agreements
+
+      - name: Install Windows system dependencies
+        run: |
+          choco install --no-progress --timeout 600 imagemagick.app ffmpeg
+          # The imagemagick.app package, for whatever reason, installs
+          # magick.exe into a directory which is not in the default
+          # search path. Currently, it seems to get installed in a
+          # directory named something like:
+          #
+          # "C:\Program Files\ImageMagick-7.1.0-Q16-HDRI"
+          $ImDirs = (
+            Get-ChildItem $env:ProgramFiles 'ImageMagick*' -Directory
+            | Select-Object -ExpandProperty FullName
+          )
+          if ($ImDirs.Length -eq 0) { Throw "Could not find path to ImageMagick" }
+          $ImDirs | Out-File $env:GITHUB_PATH utf8 -Append
+          $ImDirs | % { "::notice title=ImageMagick::ImageMagick installed at $_" }
+        continue-on-error: true
+
+      - name: Install lektor
+        run: |
+          curl -sf https://www.getlektor.com/installer.py | python3
